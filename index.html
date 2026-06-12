@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Chess Alpha Bot</title>
+
+<link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+
+<style>
+body {
+    background: #1b1b1b;
+    color: white;
+    text-align: center;
+    font-family: Arial, sans-serif;
+}
+
+#board {
+    width: 350px;
+    margin: 20px auto;
+}
+
+#status {
+    font-size: 20px;
+    margin-top: 15px;
+    font-weight: bold;
+    color: #2ed573;
+}
+
+.highlight-hint {
+    box-shadow: inset 0 0 3px 3px yellow !important;
+    background-color: rgba(255, 255, 0, 0.4) !important;
+}
+
+/* 🌟 O'yin tugaganda chiqadigan chiroyli oyna (Modal) */
+.modal {
+    display: none; 
+    position: fixed;
+    z-index: 100;
+    left: 0; top: 0;
+    width: 100%; height: 100%;
+    background-color: rgba(0,0,0,0.85);
+}
+.modal-content {
+    background-color: #2c3e50;
+    margin: 15% auto;
+    padding: 25px;
+    border-radius: 10px;
+    width: 300px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+}
+.modal-content h3 {
+    margin-top: 0;
+    font-size: 24px;
+}
+.modal-buttons {
+    margin-top: 20px;
+}
+.btn {
+    padding: 10px 25px;
+    font-size: 16px;
+    font-weight: bold;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    margin: 0 10px;
+}
+.btn-yes { background-color: #2ed573; color: white; }
+.btn-no { background-color: #ff4757; color: white; }
+</style>
+</head>
+
+<body>
+
+<h2>♟ Chess vs AI (Deep Thinking)</h2>
+
+<div id="board"></div>
+<div id="status">Sizning yurishingiz (Oqlar)</div>
+
+<!-- 🎭 O'yin tugash oynasi -->
+<div id="endModal" class="modal">
+    <div class="modal-content">
+        <h3 id="resultTitle">O'yin tugadi</h3>
+        <p id="resultDesc"></p>
+        <hr style="border-color: #34495e;">
+        <p>Yana o‘ynashni xohlaysizmi?</p>
+        <div class="modal-buttons">
+            <button class="btn btn-yes" onclick="restartGame()">Ha</button>
+            <button class="btn btn-no" onclick="closeApp()">Yo‘q</button>
+        </div>
+    </div>
+</div>
+
+<script>
+var board = null;
+var game = new Chess();
+var selectedSquare = null;
+
+/* 🧠 DONALARNING POZITSION QIYMATLARI (Matritsa)
+   Robot donalarni shunchaki surmaydi, markazni egallashga intiladi! */
+var reverseArray = function(array) { return array.slice().reverse(); };
+
+var pawnEval = [
+    [0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0],
+    [5.0,  5.0,  5.0,  5.0,  5.0,  5.0,  5.0,  5.0],
+    [1.0,  1.0,  2.0,  3.0,  3.0,  2.0,  1.0,  1.0],
+    [0.5,  0.5,  1.0,  2.5,  2.5,  1.0,  0.5,  0.5],
+    [0.0,  0.0,  0.0,  2.0,  2.0,  0.0,  0.0,  0.0],
+    [0.5, -0.5, -1.0,  0.0,  0.0, -1.0, -0.5,  0.5],
+    [0.5,  1.0, 1.0,  -2.0, -2.0,  1.0,  1.0,  0.5],
+    [0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0]
+];
+var knightEval = [
+    [-5.0, -4.0, -3.0, -3.0, -3.0, -3.0, -4.0, -5.0],
+    [-4.0, -2.0,  0.0,  0.0,  0.0,  0.0, -2.0, -4.0],
+    [-3.0,  0.0,  1.0,  1.5,  1.5,  1.0,  0.0, -3.0],
+    [-3.0,  0.5,  1.5,  2.0,  2.0,  1.5,  0.5, -3.0],
+    [-3.0,  0.0,  1.5,  2.0,  2.0,  1.5,  0.0, -3.0],
+    [-3.0,  0.5,  1.0,  1.5,  1.5,  1.0,  0.5, -3.0],
+    [-4.0, -2.0,  0.0,  0.5,  0.5,  0.0, -2.0, -4.0],
+    [-5.0, -4.0, -3.0, -3.0, -3.0, -3.0, -4.0, -5.0]
+];
+var bishopEval = [
+    [-2.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -2.0],
+    [-1.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -1.0],
+    [-1.0,  0.0,  0.5,  1.0,  1.0,  0.5,  0.0, -1.0],
+    [-1.0,  0.5,  0.5,  1.0,  1.0,  0.5,  0.5, -1.0],
+    [-1.0,  0.0,  1.0,  1.0,  1.0,  1.0,  0.0, -1.0],
+    [-1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  1.0, -1.0],[-1.0,  0.5,  0.0,  0.0,  0.0,  0.0,  0.5, -1.0],
+    [-2.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -2.0]
+];
+var rookEval = [
+    [0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0],
+    [0.5,  1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  0.5],
+    [-0.5,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -0.5],
+    [-0.5,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -0.5],
+    [-0.5,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -0.5],
+    [-0.5,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -0.5],
+    [-0.5,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -0.5],
+    [0.0,   0.0,  0.0,  0.5,  0.5,  0.0,  0.0,  0.0]
+];
+var evalQueen = [
+    [-2.0, -1.0, -1.0, -0.5, -0.5, -1.0, -1.0, -2.0],
+    [-1.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -1.0],
+    [-1.0,  0.0,  0.5,  0.5,  0.5,  0.5,  0.0, -1.0],
+    [-0.5,  0.0,  0.5,  0.5,  0.5,  0.5,  0.0, -0.5],
+    [0.0,   0.0,  0.5,  0.5,  0.5,  0.5,  0.0, -0.5],
+    [-1.0,  0.5,  0.5,  0.5,  0.5,  0.5,  0.0, -1.0],
+    [-1.0,  0.0,  0.5,  0.0,  0.0,  0.0,  0.0, -1.0],
+    [-2.0, -1.0, -1.0, -0.5, -0.5, -1.0, -1.0, -2.0]
+];
+var kingEval = [
+    [-3.0, -4.0, -4.0, -5.0, -5.0, -4.0, -4.0, -3.0],
+    [-3.0, -4.0, -4.0, -5.0, -5.0, -4.0, -4.0, -3.0],
+    [-3.0, -4.0, -4.0, -5.0, -5.0, -4.0, -4.0, -3.0],
+    [-3.0, -4.0, -4.0, -5.0, -5.0, -4.0, -4.0, -3.0],
+    [-2.0, -3.0, -3.0, -4.0, -4.0, -3.0, -3.0, -2.0],
+    [-1.0, -2.0, -2.0, -2.0, -2.0, -2.0, -2.0, -1.0],
+    [ 2.0,  2.0,  0.0,  0.0,  0.0,  0.0,  2.0,  2.0],
+    [ 2.0,  3.0,  1.0,  0.0,  0.0,  1.0,  3.0,  2.0]
+];
+
+// Taxtadagi umumiy holatni matematik baholash funksiyasi
+function evaluateBoard(board, turn) {
+    var totalEvaluation = 0;
+    for (var i = 0; i < 8; i++) {
+        for (var j = 0; j < 8; j++) {
+            totalEvaluation += getPieceValue(board[i][j], i, j);
+        }
+    }
+    return totalEvaluation;
+}
+
+function getPieceValue(piece, x, y) {
+    if (piece === null) return 0;
+    
+    var getAbsoluteValue = function (piece, isWhite, x, y) {
+        if (piece.type === 'p') return 10 + (isWhite ? pawnEval[x][y] : pawnEval[7 - x][y]);
+        if (piece.type === 'r') return 50 + (isWhite ? rookEval[x][y] : rookEval[7 - x][y]);
+        if (piece.type === 'n') return 30 + knightEval[x][y];
+        if (piece.type === 'b') return 30 + (isWhite ? bishopEval[x][y] : bishopEval[7 - x][y]);
+        if (piece.type === 'q') return 90 + evalQueen[x][y];
+        if (piece.type === 'k') return 900 + (isWhite ? kingEval[x][y] : kingEval[7 - x][y]);
+        throw "Noma'lum dona: " + piece.type;
+    };
+
+    var absoluteValue = getAbsoluteValue(piece, piece.color === 'w', x, y);
+    return piece.color === 'w' ? absoluteValue : -absoluteValue;
+}
+
+/* 🤖 MINIMAX ALGORITMI (Alfa-Beta qirqish bilan)
+   Chuqurlik (depth) = 3 qadam oldinni chuqur tahlil qiladi */
+function minimax(game, depth, alpha, beta, isMaximizingPlayer) {
+    if (depth === 0 || game.game_over()) {
+        return -evaluateBoard(game.board());
+    }
+
+    var newGameMoves = game.moves();
+
+    if (isMaximizingPlayer) {
+        var bestMove = -9999;
+        for (var i = 0; i < newGameMoves.length; i++) {
+            game.move(newGameMoves[i]);
+            bestMove = Math.max(bestMove, minimax(game, depth - 1, alpha, beta, !isMaximizingPlayer));
+            game.undo();
+            alpha = Math.max(alpha, bestMove);
+            if (beta <= alpha) return bestMove;
+        }
+        return bestMove;
+    } else {
+        var bestMove = 9999;
+        for (var i = 0; i < newGameMoves.length; i++) {
+            game.move(newGameMoves[i]);
+            bestMove = Math.min(bestMove, minimax(game, depth - 1, alpha, beta, !isMaximizingPlayer));
+            game.undo();
+            beta = Math.min(beta, bestMove);
+            if (beta <= alpha) return bestMove;
+        }
+        return bestMove;
+    }
+}
+
+// Robotning eng eng optimal yurishini topish qismi
+function makeBestMove() {
+    if (game.game_over()) { checkGameStatus(); return; }
+
+    var depth = 3; // Hisoblash chuqurligi
+    var moves = game.moves();
+    var bestMove = null;
+    var bestValue = -9999;// Eng yaxshi yurishni qidirish
+    for (var i = 0; i < moves.length; i++) {
+        var move = moves[i];
+        game.move(move);
+        var boardValue = minimax(game, depth - 1, -10000, 10000, false);
+        game.undo();
+        if (boardValue > bestValue) {
+            bestValue = boardValue;
+            bestMove = move;
+        }
+    }
+
+    game.move(bestMove);
+    board.position(game.fen());
+    checkGameStatus();
+}
+
+function removeHighlights() {
+    $('#board .square-55d63').removeClass('highlight-hint');
+}
+
+function highlightSquares(squares) {
+    squares.forEach(function(square) {
+        $('#board .square-' + square).addClass('highlight-hint');
+    });
+}
+
+function onSquareClick(square) {
+    if (game.game_over()) return;
+    if (game.turn() !== 'w') return;
+
+    var piece = game.get(square);
+
+    if (selectedSquare !== null) {
+        var move = game.move({
+            from: selectedSquare,
+            to: square,
+            promotion: 'q'
+        });
+
+        if (move !== null) {
+            board.position(game.fen());
+            removeHighlights();
+            selectedSquare = null;
+            document.getElementById('status').innerText = "Robot o'ylamoqda (SI)...";
+            
+            setTimeout(makeBestMove, 250);
+            return;
+        }
+    }
+
+    if (piece && piece.color === 'w') {
+        removeHighlights();
+        selectedSquare = square;
+
+        var moves = game.moves({
+            square: square,
+            verbose: true
+        });
+
+        if (moves.length === 0) {
+            selectedSquare = null;
+            return;
+        }
+
+        var targetSquares = moves.map(m => m.to);
+        highlightSquares(targetSquares);
+    } else {
+        removeHighlights();
+        selectedSquare = null;
+    }
+}
+
+// 🎯 O'YIN YAKUNINI TEKSHIRISH VA MODAL OYNASINI CHIQARISH
+function checkGameStatus() {
+    if (game.game_over()) {
+        var title = "";
+        var desc = "";
+        
+        if (game.in_checkmate()) {
+            title = "Mot! O'yin yakunlandi.";
+            if (game.turn() === 'w') {
+                desc = "Siz yutqazdingiz! Robot sizni mot qildi.";
+                document.getElementById('status').innerText = "Robot g'alaba qozondi!";
+            } else {
+                desc = "Siz yutdingiz! Aqlli robotni mot qilishni uddaladingiz.";
+                document.getElementById('status').innerText = "Siz g'alaba qozondingiz!";
+            }
+        } else if (game.in_draw() game.in_stalemate() game.in_threefold_repetition()) {
+            title = "Durang!";
+            desc = "Hech kim yutmadi, o'yin durang bilan tugadi (Pat yoki takroriy yurishlar).";
+            document.getElementById('status').innerText = "Durang qayd etildi!";
+        }
+
+        // Modal oynasini ko'rsatish
+        document.getElementById('resultTitle').innerText = title;
+        document.getElementById('resultDesc').innerText = desc;
+        document.getElementById('endModal').style.display = 'block';
+    } else {
+        document.getElementById('status').innerText = "Sizning yurishingiz (Oqlar)";
+    }
+}
+
+// 🔁 "Ha" tugmasi bosilganda hamma narsani yangitdan boshlash
+function restartGame() {
+    game.reset();
+    board.start();
+    document.getElementById('endModal').style.display = 'none';
+    document.getElementById('status').innerText = "Yangi o'yin boshlandi! Sizning yurishingiz.";
+    selectedSquare = null;
+}
+
+// ❌ "Yo'q" tugmasi bosilganda ekranni yopish yoki tozalash
+function closeApp() {
+    document.getElementById('endModal').style.display = 'none';
+    document.body.innerHTML = "<h2 style='margin-top:20%; color:#ff4757;'>O'yin tugatildi. Rahmat!</h2><p>Sahifani yopishingiz mumkin.</p>";
+}
+
+// Shaxmat taxtasi sozlamalari
+function customPieces(piece) {
+    var pieceUrls = {
+        'wK': 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg','wQ': 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg',
+        'wB': 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg',
+        'wN': 'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg',
+        'wR': 'https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg',
+        'wP': 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg',
+        'bK': 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg',
+        'bQ': 'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg',
+        'bB': 'https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg',
+        'bN': 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
+        'bR': 'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg',
+        'bP': 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg'
+    };
+    return pieceUrls[piece];
+}
+
+board = Chessboard('board', {
+    draggable: false,
+    position: 'start',
+    pieceTheme: customPieces
+});
+
+$('#board').on('click', '.square-55d63', function() {
+    var square = $(this).attr('data-square');
+    onSquareClick(square);
+});
+</script>
+
+</body>
+</html>
