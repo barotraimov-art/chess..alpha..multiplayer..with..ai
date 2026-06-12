@@ -1,1 +1,1 @@
-# chess..alpha..multiplayer..with..ai
+# chess..alpha..singleplayer..with..ai
